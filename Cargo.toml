@@ -12,6 +12,7 @@ lto = "off"
 
 [dependencies]
 num-bigint = { version = "0.4.3", default-features = false }
+tfhe = { version = "*", features = [ "boolean", "shortint", "integer", "aarch64-unix" ] }
 hex = "0.4.3"
 rand = "0.8.5"
 rayon = "1.7.0"
@@ -21,18 +22,4 @@ env_logger = "0.11.3"
 ctor = "0.2.4"
 
 [features]
-default = []
 nightly-avx512 = ["tfhe/nightly-avx512"]
-go_big = []
-
-[target.'cfg(target_arch = "x86_64")'.dependencies.tfhe]
-git = "https://github.com/zama-ai/tfhe-rs"
-features = [ "boolean", "shortint", "integer", "internal-keycache", "x86_64"]
-
-[target.'cfg(target_arch = "aarch64")'.dependencies.tfhe]
-git = "https://github.com/zama-ai/tfhe-rs"
-features = [ "boolean", "shortint", "integer", "internal-keycache", "aarch64"]
-
-[target.'cfg(target_arch = "aarch64-unix")'.dependencies.tfhe]
-git = "https://github.com/zama-ai/tfhe-rs"
-features = [ "boolean", "shortint", "integer", "internal-keycache", "aarch64-unix"]
