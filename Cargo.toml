@@ -1,5 +1,5 @@
 [package]
-name = "fhe"
+name = "ecdsa"
 version = "0.1.0"
 edition = "2021"
 
@@ -17,7 +17,7 @@ rand = "0.8.5"
 rayon = "1.7.0"
 lazy_static = "1.4.0"
 logging_timer = "1.1.0"
-env_logger = "0.10.0"
+env_logger = "0.11.3"
 ctor = "0.2.4"
 
 [features]
@@ -32,3 +32,7 @@ features = [ "boolean", "shortint", "integer", "internal-keycache", "x86_64"]
 [target.'cfg(target_arch = "aarch64")'.dependencies.tfhe]
 git = "https://github.com/zama-ai/tfhe-rs"
 features = [ "boolean", "shortint", "integer", "internal-keycache", "aarch64"]
+
+[target.'cfg(target_arch = "aarch64-unix")'.dependencies.tfhe]
+git = "https://github.com/zama-ai/tfhe-rs"
+features = [ "boolean", "shortint", "integer", "internal-keycache", "aarch64-unix"]
