@@ -85,7 +85,8 @@ pub fn modulo_fast<const NB: usize, P: Numeral>(
     let len = x.blocks().len();
     let mut x = x.clone();
     let is_gt = server_key.scalar_ge_parallelized(&x, b);
-    let to_sub = selector_zero_constant::<NB, _>(b, &is_gt, server_key);
+    let radix_is_get: RadixCiphertext = is_gt.into_radix(NB - 1, server_key);
+    let to_sub = selector_zero_constant::<NB, _>(b, &radix_is_get, server_key);
     server_key.sub_assign_parallelized(&mut x, &to_sub);
     server_key.trim_radix_blocks_msb_assign(&mut x, len - NB);
     x
@@ -177,12 +178,13 @@ pub fn inverse_mod_trim<const NB: usize, P: Numeral>(
         // was_done = was_done | is_done
         // done_now = is_done & never_done
         let mut done = server_key.scalar_eq_parallelized(&full_r, 0);
-        let len = done.blocks().len();
-        server_key.trim_radix_blocks_msb_assign(&mut done, len - 1);
+        let mut radix_done: RadixCiphertext = done.into_radix(NB - 1, server_key);
+        let len = radix_done.blocks().len();
+        server_key.trim_radix_blocks_msb_assign(&mut radix_done, len - 1);
         let never_done =
             server_key.sub_parallelized(&server_key.create_trivial_radix(1, 1), &was_done);
-        let done_now = server_key.bitand_parallelized(&done, &never_done);
-        server_key.bitor_assign_parallelized(&mut was_done, &done);
+        let done_now = server_key.bitand_parallelized(&radix_done, &never_done);
+        server_key.bitor_assign_parallelized(&mut was_done, &radix_done);
 
         let update = selector_zero(&t0, &done_now, server_key);
         server_key.add_assign_parallelized(&mut inv, &update);
@@ -201,10 +203,13 @@ pub fn inverse_mod_trim<const NB: usize, P: Numeral>(
     // final result mod p
     // inverse can be **negative**. so we need to add p to make it positive
     server_key.scalar_add_assign_parallelized(&mut inv, p);
-    let mut is_gt = server_key.scalar_ge_parallelized(&inv, p);
-    server_key.trim_radix_blocks_msb_assign(&mut is_gt, padded_nb - 1);
-    let to_sub =
-        server_key.mul_parallelized(&server_key.create_trivial_radix(p, padded_nb), &is_gt);
+    let is_gt = server_key.scalar_ge_parallelized(&inv, p);
+    let mut radix_is_get: RadixCiphertext = is_gt.into_radix(NB - 1, server_key);
+    server_key.trim_radix_blocks_msb_assign(&mut radix_is_get, padded_nb - 1);
+    let to_sub = server_key.mul_parallelized(
+        &server_key.create_trivial_radix(p, padded_nb),
+        &radix_is_get,
+    );
     server_key.sub_assign_parallelized(&mut inv, &to_sub);
     server_key.full_propagate_parallelized(&mut inv);
 
@@ -242,7 +247,8 @@ pub fn sub_mod<const NB: usize, P: Numeral>(
     let start_ops = Instant::now();
 
     let is_gt = server_key.gt_parallelized(b, a);
-    let to_add = selector_zero_constant::<NB, _>(p, &is_gt, server_key);
+    let radix_is_get: RadixCiphertext = is_gt.into_radix(NB - 1, server_key);
+    let to_add = selector_zero_constant::<NB, _>(p, &radix_is_get, server_key);
     let mut a_expanded = server_key.extend_radix_with_trivial_zero_blocks_msb(a, 1);
     server_key.add_assign_parallelized(&mut a_expanded, &to_add);
     server_key.sub_assign_parallelized(&mut a_expanded, b);
@@ -361,7 +367,7 @@ mod tests {
 
     use rand::{rngs::OsRng, thread_rng, Rng};
     use tfhe::{
-        integer::{keycache::IntegerKeyCache, U256},
+        integer::{keycache::IntegerKeyCache, IntegerKeyKind, U256},
         shortint::prelude::PARAM_MESSAGE_2_CARRY_2,
     };
 
@@ -383,7 +389,8 @@ mod tests {
 
     #[test]
     fn correct_fast_mod_reduc() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 5;
         let p: u16 = 251;
         let a = 500;
@@ -402,7 +409,8 @@ mod tests {
 
     #[test]
     fn correct_fast_mod_reduc_random() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 5;
         let p: u16 = 251;
         let a = OsRng.gen_range(0..2 * p);
@@ -414,7 +422,8 @@ mod tests {
 
     #[test]
     fn correct_mod_reduc() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 8;
         let p: u16 = 251;
         let a = 62999;
@@ -433,7 +442,8 @@ mod tests {
 
     #[test]
     fn correct_mod_reduc_random() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 8;
         let p: u16 = 251;
         let a = OsRng.gen_range(0..p.pow(2));
@@ -446,7 +456,8 @@ mod tests {
 
     #[test]
     fn correct_add_mod() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 251;
 
@@ -486,7 +497,8 @@ mod tests {
 
     #[test]
     fn correct_add_mod_random() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 251;
 
@@ -504,7 +516,8 @@ mod tests {
 
     #[test]
     fn correct_sub_mod() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 251;
         let a = 248;
@@ -535,7 +548,8 @@ mod tests {
 
     #[test]
     fn correct_sub_mod_random() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 251;
         let a = OsRng.gen_range(0..p);
@@ -553,7 +567,8 @@ mod tests {
 
     #[test]
     fn correct_double_mod() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 251;
         let a = 248;
@@ -576,7 +591,8 @@ mod tests {
 
     #[test]
     fn correct_double_mod_random() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 251;
         let a = OsRng.gen_range(0..p);
@@ -589,7 +605,8 @@ mod tests {
 
     #[test]
     fn correct_square_mod() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 251;
         let a = 248;
@@ -612,7 +629,8 @@ mod tests {
 
     #[test]
     fn correct_square_mod_random() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 251;
         let a = OsRng.gen_range(0..p);
@@ -625,7 +643,8 @@ mod tests {
 
     #[test]
     fn correct_mul_mod() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 251;
         let a = 249;
@@ -664,7 +683,8 @@ mod tests {
 
     #[test]
     fn correct_mul_mod_random() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 251;
         let a = OsRng.gen_range(0..p);
@@ -682,7 +702,8 @@ mod tests {
 
     #[test]
     fn correct_inverse_mod() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 157;
         let a = 8;
@@ -730,7 +751,8 @@ mod tests {
 
     #[test]
     fn correct_inverse_mod_random() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 157;
         let a = OsRng.gen_range(0..p);
@@ -743,7 +765,8 @@ mod tests {
 
     #[test]
     fn correct_inverse_mods() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         set_client_key(&client_key);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 157;
@@ -768,7 +791,8 @@ mod tests {
 
     #[test]
     fn correct_inverse_mods_random() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         set_client_key(&client_key);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 157;

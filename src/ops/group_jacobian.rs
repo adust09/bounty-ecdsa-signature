@@ -7,8 +7,10 @@ use tfhe::{
     core_crypto::prelude::Numeric,
     integer::{
         block_decomposition::{DecomposableInto, RecomposableFrom},
-        RadixCiphertext, ServerKey,
+        BooleanBlock, RadixCiphertext, ServerKey,
     },
+    prelude::FheEncrypt,
+    FheBool,
 };
 
 use crate::{
@@ -263,13 +265,19 @@ pub fn group_projective_add_affine<const NB: usize, P: Numeral>(
     // x'' =  x' * is_z0_z1_non_zero + (x0 + x1) * not_is_z0_z1_non_zero
     // y'' =  y' * is_z0_z1_non_zero + (y0 + y1) * not_is_z0_z1_non_zero
     // z'' =  z' * is_z0_z1_non_zero + (z0 + z1) * not_is_z0_z1_non_zero
-    let (mut is_z0_non_zero, mut is_z1_non_zero) = rayon::join(
+    let (is_z0_non_zero, is_z1_non_zero) = rayon::join(
         || server_key.scalar_ne_parallelized(z, 0),
         || server_key.scalar_ne_parallelized(other_flag_bit, 0),
     );
-    server_key.trim_radix_blocks_msb_assign(&mut is_z0_non_zero, NB - 1);
-    server_key.trim_radix_blocks_msb_assign(&mut is_z1_non_zero, NB - 1);
-    let is_z0_z1_non_zero = server_key.bitand_parallelized(&is_z0_non_zero, &is_z1_non_zero);
+    let mut radix_is_z0_non_zero: RadixCiphertext = is_z0_non_zero.into_radix(NB - 1, server_key);
+    let mut radix_is_z1_non_zero: RadixCiphertext = is_z1_non_zero.into_radix(NB - 1, server_key);
+
+    server_key.trim_radix_blocks_msb_assign(&mut radix_is_z0_non_zero, NB - 1);
+    server_key.trim_radix_blocks_msb_assign(&mut radix_is_z1_non_zero, NB - 1);
+
+    server_key.trim_radix_blocks_msb_assign(&mut radix_is_z1_non_zero, NB - 1);
+    let is_z0_z1_non_zero =
+        server_key.bitand_parallelized(&radix_is_z0_non_zero, &radix_is_z1_non_zero);
     let not_is_z0_z1_non_zero =
         server_key.sub_parallelized(&server_key.create_trivial_radix(1, 1), &is_z0_z1_non_zero);
 
@@ -497,13 +505,19 @@ pub fn group_projective_add_projective<const NB: usize, P: Numeral>(
     // x'' =  x' * is_z0_z1_non_zero + (x0 + x1) * not_is_z0_z1_non_zero
     // y'' =  y' * is_z0_z1_non_zero + (y0 + y1) * not_is_z0_z1_non_zero
     // z'' =  z' * is_z0_z1_non_zero + (z0 + z1) * not_is_z0_z1_non_zero
-    let (mut is_z0_non_zero, mut is_z1_non_zero) = rayon::join(
+    let (is_z0_non_zero, is_z1_non_zero) = rayon::join(
         || server_key.scalar_ne_parallelized(z0, 0),
         || server_key.scalar_ne_parallelized(z1, 0),
     );
-    server_key.trim_radix_blocks_msb_assign(&mut is_z0_non_zero, NB - 1);
-    server_key.trim_radix_blocks_msb_assign(&mut is_z1_non_zero, NB - 1);
-    let is_z0_z1_non_zero = server_key.bitand_parallelized(&is_z0_non_zero, &is_z1_non_zero);
+
+    let mut radix_is_z0_non_zero: RadixCiphertext = is_z0_non_zero.into_radix(NB - 1, server_key);
+    let mut radix_is_z1_non_zero: RadixCiphertext = is_z1_non_zero.into_radix(NB - 1, server_key);
+
+    server_key.trim_radix_blocks_msb_assign(&mut radix_is_z0_non_zero, NB - 1);
+    server_key.trim_radix_blocks_msb_assign(&mut radix_is_z1_non_zero, NB - 1);
+
+    let is_z0_z1_non_zero =
+        server_key.bitand_parallelized(&radix_is_z0_non_zero, &radix_is_z1_non_zero);
     let not_is_z0_z1_non_zero =
         server_key.sub_parallelized(&server_key.create_trivial_radix(1, 1), &is_z0_z1_non_zero);
 
@@ -648,7 +662,7 @@ pub fn group_projective_scalar_mul_constant<const NB: usize, P: Numeral>(
     (res_x, res_y, res_z)
 }
 
-/// native scalar mul for group elements. 
+/// native scalar mul for group elements.
 pub fn group_projective_scalar_mul_native<P: Numeral>(
     x: P,
     y: P,
@@ -863,7 +877,10 @@ pub fn group_projective_into_affine_native<P: Numeral>(x: P, y: P, z: P, p: P) -
 #[cfg(test)]
 mod tests {
 
-    use tfhe::{integer::keycache::IntegerKeyCache, shortint::prelude::PARAM_MESSAGE_2_CARRY_2};
+    use tfhe::{
+        integer::{keycache::IntegerKeyCache, IntegerKeyKind},
+        shortint::prelude::PARAM_MESSAGE_2_CARRY_2,
+    };
 
     use crate::{
         ops::group_jacobian::{
@@ -880,7 +897,8 @@ mod tests {
 
     #[test]
     fn correct_jacobian_double() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
 
         const NUM_BLOCK: usize = 4;
         type Integer = u8;
@@ -911,7 +929,8 @@ mod tests {
 
     #[test]
     fn correct_jacobian_add_affine() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
 
         const NUM_BLOCK: usize = 4;
         type Integer = u8;
@@ -951,7 +970,8 @@ mod tests {
 
     #[test]
     fn correct_jacobian_scalar_mul() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
 
         const NUM_BLOCK: usize = 4;
         type Integer = u8;

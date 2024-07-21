@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 
-use fhe::{
+use logging_timer::Level;
+use scholarship::{
     helper::{format, set_client_key, u256_from_decimal_string},
     numeral::Numeral,
     ops::{
@@ -16,15 +17,15 @@ use fhe::{
     stats::ProtocolStats,
     WINDOW,
 };
-use logging_timer::Level;
 use std::time::Instant;
 use tfhe::{
-    integer::{keycache::IntegerKeyCache, U256},
+    integer::{keycache::IntegerKeyCache, IntegerKeyKind, U256},
     shortint::parameters::PARAM_MESSAGE_2_CARRY_2,
 };
 
 fn main() {
-    let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+    let (client_key, server_key) =
+        IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
     set_client_key(&client_key);
 
     #[cfg(feature = "go_big")]

@@ -150,12 +150,17 @@ mod tests {
     use std::time::Instant;
 
     use num_bigint::BigInt;
-    use tfhe::{integer::keycache::IntegerKeyCache, shortint::prelude::PARAM_MESSAGE_2_CARRY_2};
+    use tfhe::{
+        integer::{keycache::IntegerKeyCache, IntegerKeyKind},
+        shortint::prelude::PARAM_MESSAGE_2_CARRY_2,
+    };
 
     use crate::ops::{
         mersenne::{mersenne_mod_native, mul_mod_mersenne},
         native::mul_mod_native,
     };
+
+    use crate::ecdsa;
 
     use super::{mersenne_coeff, mersenne_coeff_p};
 
@@ -173,7 +178,8 @@ mod tests {
 
     #[test]
     fn correct_mersenne_mul_mod() {
-        let (client_key, server_key) = IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2);
+        let (client_key, server_key) =
+            IntegerKeyCache.get_from_params(PARAM_MESSAGE_2_CARRY_2, IntegerKeyKind::Radix);
         const NUM_BLOCK: usize = 4;
         let p: u8 = 251;
 
